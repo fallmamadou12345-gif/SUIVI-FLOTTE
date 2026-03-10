@@ -625,7 +625,16 @@ export default function App() {
       // PERSIST EVERYTHING IMMEDIATELY
       (async () => {
         try {
-          await window.storage.set("flotte_drivers", JSON.stringify(finalDrivers));
+          try {
+            await window.storage.set("flotte_drivers", JSON.stringify(finalDrivers));
+          } catch (e: any) {
+            if (e.name === 'QuotaExceededError' || (e.message && e.message.includes('quota'))) {
+              console.warn("Local storage quota exceeded for drivers. Relying on Firebase sync.");
+              setToasts(prev => [...prev, { id: Date.now(), message: "Stockage local plein. Synchronisation Cloud priorisée.", type: "info" }]);
+            } else {
+              throw e;
+            }
+          }
           await window.storage.set("flotte_history", JSON.stringify(newHist));
           await window.storage.set("flotte_recruits", JSON.stringify(updatedRecruits));
           await window.storage.set("flotte_reactivated", JSON.stringify(updatedReactivations));
