@@ -198,23 +198,6 @@ export default function App() {
     };
   }, []);
 
-  // SAVE to Firebase
-  useEffect(() => {
-    if (!firebaseActive || !storageReady) return;
-    const sync = async () => {
-      try {
-        // Sync drivers (chunked or individual)
-        // For simplicity in this demo, we sync individual docs that changed
-        // But here we just sync the whole collection if it's small enough
-        for (const d of drivers) {
-          await setDoc(doc(db, "flotte_store", d.id), d);
-        }
-      } catch (e) { console.error("Firebase sync error:", e); }
-    };
-    const t = setTimeout(sync, 5000);
-    return () => clearTimeout(t);
-  }, [drivers, firebaseActive, storageReady]);
-
   // SAVE sessions & logs & fleets
   useEffect(() => {
     if (!storageReady) return;
@@ -420,21 +403,33 @@ export default function App() {
 
     setCurrentAgent(agent);
     setTotalCalls(c => c + 1);
-    setDrivers(ds => ds.map(d => d.id === driverId ? { ...d, _called: true, _callCount: newCount, _callLog: [...d._callLog, entry], commentaire: comment || d.commentaire } : d));
+    
+    const updatedDriver = { ...driver, _called: true, _callCount: newCount, _callLog: [...driver._callLog, entry], commentaire: comment || driver.commentaire };
+    setDrivers(ds => ds.map(d => d.id === driverId ? updatedDriver : d));
+    
+    if (firebaseActive) {
+      setDoc(doc(db, "flotte_store", driverId), updatedDriver).catch(console.error);
+    }
 
     const ev = { id: Date.now() + Math.random(), driverNom: driver.nom, count: newCount, agent, time: now };
     setToasts(t => [...t, ev]);
     setTimeout(() => setToasts(t => t.filter(e => e.id !== ev.id)), 4000);
     setModal(null);
-  }, [modal]);
+  }, [modal, firebaseActive]);
 
   const handleWaClick = useCallback((driverId: string) => {
     setWaModal({ driverId });
   }, []);
 
   const onComment = useCallback((id: string, comment: string) => {
-    setDrivers(ds => ds.map(d => d.id === id ? { ...d, commentaire: comment } : d));
-  }, []);
+    const driver = driversRef.current.find(d => d.id === id);
+    if (!driver) return;
+    const updatedDriver = { ...driver, commentaire: comment };
+    setDrivers(ds => ds.map(d => d.id === id ? updatedDriver : d));
+    if (firebaseActive) {
+      setDoc(doc(db, "flotte_store", id), updatedDriver).catch(console.error);
+    }
+  }, [firebaseActive]);
 
   const handleFileUpload = (e: any) => {
     if (currentFleetId === "ALL") {
@@ -537,8 +532,12 @@ export default function App() {
           newSnapshot[tel] = lastOrderStr;
         }
 
+        // Generate a robust unique ID
+        const rawId = tel || row["Lead ID"] || `driver_${Date.now()}_${i}`;
+        const safeId = rawId.replace(/[^a-zA-Z0-9+_-]/g, "");
+
         return {
-          id: row["Lead ID"] || `r${i}`,
+          id: safeId,
           nom: row["Nom complet"] || "—",
           tel: row["Numéro de téléphone"] || "",
           solde, limite,
@@ -641,6 +640,18 @@ export default function App() {
           await window.storage.set("flotte_recruits", JSON.stringify(updatedRecruits));
           await window.storage.set("flotte_reactivated", JSON.stringify(updatedReactivations));
           await window.storage.set("flotte_dl_snapshot", JSON.stringify(newSnapshot));
+          
+          if (firebaseActive) {
+            setToasts(prev => [...prev, { id: Date.now(), message: "Synchronisation Cloud automatique en cours... (Cela peut prendre quelques minutes)", type: "info" }]);
+            const chunkSize = 400;
+            for (let i = 0; i < finalDrivers.length; i += chunkSize) {
+              const chunk = finalDrivers.slice(i, i + chunkSize);
+              const batch = writeBatch(db);
+              chunk.forEach(d => batch.set(doc(db, "flotte_store", d.id), d));
+              await batch.commit();
+            }
+            setToasts(prev => [...prev, { id: Date.now(), message: "Données synchronisées avec succès !", type: "success" }]);
+          }
         } catch (e) {
           console.error("Failed to save after import", e);
           setToasts(prev => [...prev, { id: Date.now(), message: "Erreur de sauvegarde automatique !", type: "error" }]);
@@ -697,12 +708,13 @@ export default function App() {
   }
 
   const handleSaveTicket = (ticket: any) => {
-    setDrivers(ds => ds.map(d => {
-      if (d.id === ticket.driverId) {
-        return { ...d, tickets: [...(d.tickets || []), ticket] };
-      }
-      return d;
-    }));
+    const driver = driversRef.current.find(d => d.id === ticket.driverId);
+    if (!driver) return;
+    const updatedDriver = { ...driver, tickets: [...(driver.tickets || []), ticket] };
+    setDrivers(ds => ds.map(d => d.id === ticket.driverId ? updatedDriver : d));
+    if (firebaseActive) {
+      setDoc(doc(db, "flotte_store", ticket.driverId), updatedDriver).catch(console.error);
+    }
   };
 
   return (
