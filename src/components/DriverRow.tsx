@@ -11,11 +11,12 @@ interface DriverRowProps {
   onComment: (id: string, comment: string) => void;
   onCallClick: (id: string) => void;
   onWaClick: (id: string) => void;
+  onProfileClick: (id: string) => void;
   currentAgent?: string;
   fleets?: any[];
 }
 
-const DriverRow: React.FC<DriverRowProps> = ({ driver, onComment, onCallClick, onWaClick, currentAgent, fleets = INITIAL_FLEETS }) => {
+const DriverRow: React.FC<DriverRowProps> = ({ driver, onComment, onCallClick, onWaClick, onProfileClick, currentAgent, fleets = INITIAL_FLEETS }) => {
   const [expanded, setExpanded] = useState(false);
   const [editComment, setEditComment] = useState(false);
   const [localComment, setLocalComment] = useState(driver.commentaire || "");
@@ -98,6 +99,16 @@ const DriverRow: React.FC<DriverRowProps> = ({ driver, onComment, onCallClick, o
         <td style={{ padding: "10px 12px", fontSize: 12, color: "#6b7280" }}>{driver.responsable || "—"}</td>
         <td style={{ padding: "10px 12px" }} onClick={e => e.stopPropagation()}>
           <div style={{ display: "flex", gap: 4 }}>
+            <button
+              onClick={e => { e.stopPropagation(); onProfileClick(driver.id); }}
+              style={{
+                padding: "5px 8px", borderRadius: 8, border: "none", background: "#f3f4f6", color: "#374151",
+                fontSize: 14, cursor: "pointer", fontWeight: 700, lineHeight: 1
+              }}
+              title="Vue 360°"
+            >
+              👁️
+            </button>
             <CallBtn driver={driver} onCallClick={onCallClick} compact />
             <button
               onClick={e => { e.stopPropagation(); onWaClick(driver.id); }}

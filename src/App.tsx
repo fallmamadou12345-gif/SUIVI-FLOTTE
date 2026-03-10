@@ -12,9 +12,10 @@ import LoginModal from "./components/LoginModal";
 import SettingsModal from "./components/SettingsModal";
 import GoldTab from "./components/GoldTab";
 import ZoneBadge from "./components/ZoneBadge";
+import DriverProfileModal from "./components/DriverProfileModal";
 
 import { db } from "./firebase";
-import { collection, doc, setDoc, getDocs, onSnapshot, query, limit, orderBy } from "firebase/firestore";
+import { collection, doc, setDoc, getDocs, onSnapshot, query, limit, orderBy, writeBatch } from "firebase/firestore";
 
 const PER_PAGE = 30;
 
@@ -25,6 +26,7 @@ export default function App() {
   const [firebaseActive, setFirebaseActive] = useState(false);
   const [modal, setModal] = useState<{ driverId: string } | null>(null);
   const [waModal, setWaModal] = useState<{ driverId: string } | null>(null);
+  const [profileModal, setProfileModal] = useState<{ driverId: string } | null>(null);
   const [currentAgent, setCurrentAgent] = useState("");
   const [userRole, setUserRole] = useState<"SUPER_ADMIN" | "ADMIN_PARC" | "AGENT" | null>(null);
   const [currentUserFleets, setCurrentUserFleets] = useState<string[]>([]);
@@ -103,15 +105,15 @@ export default function App() {
       } catch (e) { console.error("Session load error", e); }
 
       // 2. Load from Firebase with Real-time listeners
-      const isFirebaseConfigured = !!import.meta.env.VITE_FIREBASE_API_KEY;
+      const isFirebaseConfigured = true; // Always true since we have fallbacks in firebase.ts
       
       if (isFirebaseConfigured) {
         try {
           unsubDrivers = onSnapshot(collection(db, "flotte_store"), (snap) => {
+            setFirebaseActive(true); // Firebase is active if we can listen to it
             if (!snap.empty) {
               const fbDrivers = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
               setDrivers(fbDrivers);
-              setFirebaseActive(true);
               setStorageMode("cloud");
             } else {
               setStorageMode("local");
@@ -656,18 +658,27 @@ export default function App() {
     if (!confirm("Voulez-vous envoyer toutes vos données locales vers le Cloud ? Cela écrasera les données distantes.")) return;
     
     try {
-      setToasts(prev => [...prev, { id: Date.now(), message: "Synchronisation Cloud en cours...", type: "info" }]);
+      setToasts(prev => [...prev, { id: Date.now(), message: "Synchronisation Cloud en cours... (Cela peut prendre quelques minutes)", type: "info" }]);
       
-      // Sync drivers
-      for (const d of drivers) {
-        await setDoc(doc(db, "flotte_store", d.id), d);
+      // Sync drivers in batches of 400
+      const chunkSize = 400;
+      for (let i = 0; i < drivers.length; i += chunkSize) {
+        const chunk = drivers.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        chunk.forEach(d => {
+          batch.set(doc(db, "flotte_store", d.id), d);
+        });
+        await batch.commit();
       }
+
       // Sync users
+      const userBatch = writeBatch(db);
       for (const u of users) {
         // Use name as ID for users if no ID
         const userId = u.id || u.name.replace(/\s/g, "_");
-        await setDoc(doc(db, "users", userId), u);
+        userBatch.set(doc(db, "users", userId), u);
       }
+      await userBatch.commit();
       
       setStorageMode("cloud");
       setToasts(prev => [...prev, { id: Date.now(), message: "Données synchronisées avec succès !", type: "success" }]);
@@ -679,10 +690,20 @@ export default function App() {
 
   const modalDriver = modal ? driversRef.current.find(d => d.id === modal.driverId) : null;
   const waDriver = waModal ? driversRef.current.find(d => d.id === waModal.driverId) : null;
+  const profileDriver = profileModal ? driversRef.current.find(d => d.id === profileModal.driverId) : null;
 
   if (!currentAgent) {
     return <LoginModal users={users} onLogin={handleLogin} loading={loadingUsers} />;
   }
+
+  const handleSaveTicket = (ticket: any) => {
+    setDrivers(ds => ds.map(d => {
+      if (d.id === ticket.driverId) {
+        return { ...d, tickets: [...(d.tickets || []), ticket] };
+      }
+      return d;
+    }));
+  };
 
   return (
     <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", background: "#f8fafc", minHeight: "100vh" }}>
@@ -702,6 +723,14 @@ export default function App() {
           fleetName={fleets.find(f => f.id === waDriver.fleetId)?.name || "Yango"}
           fleetPhone={fleets.find(f => f.id === waDriver.fleetId)?.phone || ""}
           agentName={currentAgent}
+        />
+      )}
+
+      {profileModal && profileDriver && (
+        <DriverProfileModal
+          driver={profileDriver}
+          onClose={() => setProfileModal(null)}
+          onSaveTicket={handleSaveTicket}
         />
       )}
 
@@ -1235,6 +1264,7 @@ export default function App() {
                         onComment={onComment} 
                         onCallClick={handleCallClick} 
                         onWaClick={handleWaClick} 
+                        onProfileClick={(id) => setProfileModal({ driverId: id })}
                         currentAgent={currentAgent}
                         fleets={fleets}
                       />
@@ -1260,6 +1290,7 @@ export default function App() {
                       <div style={{ color: driver.solde < 0 ? "#dc2626" : "#15803d", fontWeight: 700 }}>💰 {driver.solde} FCFA</div>
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={() => setProfileModal({ driverId: driver.id })} style={{ padding: "10px", background: "#f3f4f6", color: "#374151", borderRadius: 8, border: "none", fontWeight: 700, fontSize: 14 }}>👁️</button>
                       <a href={`tel:${driver.tel}`} onClick={() => handleCallClick(driver.id)} style={{ flex: 1, textAlign: "center", padding: "10px", background: "#1d4ed8", color: "#fff", borderRadius: 8, textDecoration: "none", fontWeight: 700, fontSize: 14 }}>📞 Appeler</a>
                       <a href={`sms:${driver.tel}?body=${encodeURIComponent(`Bonjour ${driver.nom}, c'est ${currentAgent || "votre agent"} de la flotte. Comment allez-vous ?`)}`} onClick={() => handleWaClick(driver.id)} style={{ flex: 1, textAlign: "center", padding: "10px", background: "#f0fdf4", color: "#15803d", border: "1px solid #86efac", borderRadius: 8, textDecoration: "none", fontWeight: 700, fontSize: 14 }}>✉️ SMS</a>
                       <button onClick={() => handleWaClick(driver.id)} style={{ flex: 1, padding: "10px", background: "#25d366", color: "#fff", borderRadius: 8, border: "none", fontWeight: 700, fontSize: 14 }}>💬 WA</button>
