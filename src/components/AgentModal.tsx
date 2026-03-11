@@ -5,6 +5,7 @@ export default function AgentModal({ driver, onConfirm, onClose, currentAgent }:
   const [agent, setAgent] = useState(currentAgent || "");
   const [comment, setComment] = useState(driver?.commentaire || "");
   const [outcome, setOutcome] = useState("");
+  const [dateRappel, setDateRappel] = useState(driver?.dateRappel || "");
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -19,7 +20,7 @@ export default function AgentModal({ driver, onConfirm, onClose, currentAgent }:
 
   const submit = () => {
     if (!canConfirm) return;
-    onConfirm({ agent: finalAgent, comment, outcome });
+    onConfirm({ agent: finalAgent, comment, outcome, dateRappel });
   };
 
   const outcomes = [
@@ -29,6 +30,7 @@ export default function AgentModal({ driver, onConfirm, onClose, currentAgent }:
     { code: "[SOLDE]", label: "💰 Problème solde", color: "#d97706" },
     { code: "[DOCS]", label: "📄 Docs expirés", color: "#7c3aed" },
     { code: "[MALADE]", label: "🤒 Indisponible", color: "#0891b2" },
+    { code: "[QUITTE_PARC]", label: "🚪 A quitté le parc", color: "#000000" },
   ];
 
   return (
@@ -97,7 +99,18 @@ export default function AgentModal({ driver, onConfirm, onClose, currentAgent }:
               placeholder="Ex: Chauffeur dit qu'il reprend lundi, panne réparée..."
               style={{
                 width: "100%", padding: "10px 12px", border: "1px solid #d1d5db",
-                borderRadius: 8, fontSize: 13, resize: "vertical", minHeight: 56, boxSizing: "border-box"
+                borderRadius: 8, fontSize: 13, resize: "vertical", minHeight: 56, boxSizing: "border-box", marginBottom: 12
+              }}
+            />
+            
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#374151", letterSpacing: "0.06em", marginBottom: 6 }}>📅 REPRISE / RAPPEL PRÉVU LE</div>
+            <input
+              type="date"
+              value={dateRappel}
+              onChange={e => setDateRappel(e.target.value)}
+              style={{
+                width: "100%", padding: "10px 12px", border: "1px solid #d1d5db",
+                borderRadius: 8, fontSize: 13, boxSizing: "border-box"
               }}
             />
           </div>

@@ -55,6 +55,7 @@ export default function DriverProfileModal({ driver, onClose, onSaveTicket }: { 
               <div style={{ fontSize: 15, opacity: 0.9, display: "flex", alignItems: "center", gap: 16 }}>
                 <span>📞 {driver.tel || "Sans numéro"}</span>
                 <span>🚗 {driver.vehicule || "Véhicule inconnu"} ({driver.plaque || "Pas de plaque"})</span>
+                <span>🪪 Permis: {driver.permis || "Non renseigné"}</span>
               </div>
             </div>
           </div>
@@ -134,6 +135,17 @@ export default function DriverProfileModal({ driver, onClose, onSaveTicket }: { 
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {driver.dateRappel && (
+                  <div style={{ background: "#f0fdf4", padding: 20, borderRadius: 16, border: "1px solid #bbf7d0" }}>
+                    <h3 style={{ margin: "0 0 8px 0", fontSize: 14, color: "#166534", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
+                      📅 Rappel programmé
+                    </h3>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: "#14532d" }}>
+                      {new Date(driver.dateRappel).toLocaleDateString("fr-FR", { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ background: "#f8fafc", padding: 20, borderRadius: 16, border: "1px solid #e5e7eb", height: "100%" }}>
                   <h3 style={{ margin: "0 0 16px 0", fontSize: 14, color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.05em" }}>Dernier Commentaire</h3>
                   {driver.commentaire ? (
@@ -175,8 +187,13 @@ export default function DriverProfileModal({ driver, onClose, onSaveTicket }: { 
                           <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 500 }}>{log.time}</div>
                         </div>
                         {log.outcome && (
-                          <div style={{ display: "inline-block", background: "#f3f4f6", padding: "4px 8px", borderRadius: 6, fontSize: 12, fontWeight: 600, color: "#4b5563", marginBottom: 8 }}>
+                          <div style={{ display: "inline-block", background: "#f3f4f6", padding: "4px 8px", borderRadius: 6, fontSize: 12, fontWeight: 600, color: "#4b5563", marginBottom: 8, marginRight: 8 }}>
                             {log.outcome}
+                          </div>
+                        )}
+                        {log.dateRappel && (
+                          <div style={{ display: "inline-block", background: "#f0fdf4", padding: "4px 8px", borderRadius: 6, fontSize: 12, fontWeight: 600, color: "#166534", marginBottom: 8, border: "1px solid #bbf7d0" }}>
+                            📅 Rappel: {new Date(log.dateRappel).toLocaleDateString("fr-FR")}
                           </div>
                         )}
                         <div style={{ fontSize: 14, color: "#374151", lineHeight: 1.5 }}>

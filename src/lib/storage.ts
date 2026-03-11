@@ -21,11 +21,11 @@ window.storage = {
   get: async (key: string) => {
     try {
       const data = await apiRequest(key, "GET");
-      window.storage.mode = "cloud";
+      window.storage.mode = "local";
       return data;
     } catch (e) {
-      console.warn(`[Storage] Cloud failed (${e}), falling back to local`);
-      window.storage.mode = "local";
+      console.warn(`[Storage] Backend failed (${e}), falling back to browser`);
+      window.storage.mode = "browser";
       const val = localStorage.getItem(key);
       return val ? { value: val } : null;
     }
@@ -34,9 +34,9 @@ window.storage = {
   set: async (key: string, value: string) => {
     try {
       await apiRequest(key, "POST", value);
-      window.storage.mode = "cloud";
-    } catch (e) {
       window.storage.mode = "local";
+    } catch (e) {
+      window.storage.mode = "browser";
       localStorage.setItem(key, value);
     }
   },

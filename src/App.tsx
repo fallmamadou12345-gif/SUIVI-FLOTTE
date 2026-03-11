@@ -14,8 +14,7 @@ import GoldTab from "./components/GoldTab";
 import ZoneBadge from "./components/ZoneBadge";
 import DriverProfileModal from "./components/DriverProfileModal";
 
-import { db } from "./firebase";
-import { collection, doc, setDoc, getDocs, onSnapshot, query, limit, orderBy, writeBatch } from "firebase/firestore";
+// Firebase removed
 
 const PER_PAGE = 30;
 
@@ -23,7 +22,6 @@ export default function App() {
   const [drivers, setDrivers] = useState<any[]>(() => generateSampleDrivers());
   const [importHistory, setImportHistory] = useState<any[]>([]);
   const [storageReady, setStorageReady] = useState(false);
-  const [firebaseActive, setFirebaseActive] = useState(false);
   const [modal, setModal] = useState<{ driverId: string } | null>(null);
   const [waModal, setWaModal] = useState<{ driverId: string } | null>(null);
   const [profileModal, setProfileModal] = useState<{ driverId: string } | null>(null);
@@ -45,6 +43,8 @@ export default function App() {
   const [zoneFilter, setZoneFilter] = useState("ALL");
   const [responsableFilter, setResponsableFilter] = useState("ALL");
   const [showBloques, setShowBloques] = useState(false);
+  const [showQuitteParc, setShowQuitteParc] = useState(false);
+  const [showRappels, setShowRappels] = useState(false);
   const [inactifMin, setInactifMin] = useState("");
   const [inactifMax, setInactifMax] = useState("");
   const [inactifPreset, setInactifPreset] = useState("");
@@ -54,7 +54,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("pilotage");
   const [toasts, setToasts] = useState<any[]>([]);
   const [totalCalls, setTotalCalls] = useState(0);
-  const [storageMode, setStorageMode] = useState<"cloud" | "local" | "unknown">("unknown");
+  const [storageMode, setStorageMode] = useState<"browser" | "local" | "unknown">("unknown");
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [recruits, setRecruits] = useState<Record<string, string>>({});
@@ -87,9 +87,9 @@ export default function App() {
       
       // 1. Load Session if exists
       try {
-        const savedSession = await window.storage.get("flotte_session_data");
-        if (savedSession && savedSession.value) {
-          const session = JSON.parse(savedSession.value);
+        const savedSession = localStorage.getItem("flotte_session_data");
+        if (savedSession) {
+          const session = JSON.parse(savedSession);
           setCurrentAgent(session.name);
           setUserRole(session.role);
           setCurrentUserFleets(session.allowedFleets || []);
@@ -104,50 +104,30 @@ export default function App() {
         }
       } catch (e) { console.error("Session load error", e); }
 
-      // 2. Load from Firebase with Real-time listeners
-      const isFirebaseConfigured = true; // Always true since we have fallbacks in firebase.ts
-      
-      if (isFirebaseConfigured) {
-        try {
-          unsubDrivers = onSnapshot(collection(db, "flotte_store"), (snap) => {
-            setFirebaseActive(true); // Firebase is active if we can listen to it
-            if (!snap.empty) {
-              const fbDrivers = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-              setDrivers(fbDrivers);
-              setStorageMode("cloud");
-            } else {
-              setStorageMode("local");
-            }
-          }, (err) => {
-            console.error("Drivers listener error", err);
-            setStorageMode("local");
-          });
-
-          unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
-            if (!snap.empty) {
-              const fbUsers = snap.docs.map(doc => doc.data());
-              setUsers(fbUsers);
-              setLoadingUsers(false);
-            } else {
-              setLoadingUsers(false);
-            }
-          });
-
-          unsubLogs = onSnapshot(query(collection(db, "logs"), orderBy("time", "desc"), limit(100)), (snap) => {
-            if (!snap.empty) {
-              setGlobalLogs(snap.docs.map(doc => doc.data()));
-            }
-          });
-
-        } catch (e) {
-          console.error("Firebase setup error:", e);
-          setStorageMode("local");
-          setLoadingUsers(false);
+      // 2. Load from local storage
+      try {
+        const savedDrivers = await window.storage.get("flotte_drivers");
+        if (savedDrivers && savedDrivers.value) {
+          setDrivers(JSON.parse(savedDrivers.value));
         }
-      } else {
-        setStorageMode("local");
-        setLoadingUsers(false);
-      }
+      } catch (e) { console.error("Drivers load error", e); }
+
+      try {
+        const savedUsers = await window.storage.get("flotte_users");
+        if (savedUsers && savedUsers.value) {
+          setUsers(JSON.parse(savedUsers.value));
+        }
+      } catch (e) { console.error("Users load error", e); }
+
+      try {
+        const savedLogs = await window.storage.get("flotte_logs");
+        if (savedLogs && savedLogs.value) {
+          setGlobalLogs(JSON.parse(savedLogs.value));
+        }
+      } catch (e) { console.error("Logs load error", e); }
+      
+      setStorageMode(window.storage.mode);
+      setLoadingUsers(false);
 
       // 3. Load other static data
       try {
@@ -188,14 +168,10 @@ export default function App() {
       } catch (e) { }
 
       setStorageReady(true);
-      if (!isFirebaseConfigured) setStorageMode(window.storage.mode);
+      setStorageMode(window.storage.mode);
     })();
 
-    return () => {
-      if (unsubDrivers) unsubDrivers();
-      if (unsubUsers) unsubUsers();
-      if (unsubLogs) unsubLogs();
-    };
+    return () => {};
   }, []);
 
   // SAVE sessions & logs & fleets
@@ -297,9 +273,20 @@ export default function App() {
 
   const filtered = useMemo(() => {
     let d = fleetDrivers;
+    if (showQuitteParc) {
+      d = d.filter(dr => dr.aQuitteParc);
+    } else {
+      d = d.filter(dr => !dr.aQuitteParc);
+    }
+    
+    if (showRappels) {
+      const today = new Date().toISOString().split('T')[0];
+      d = d.filter(dr => dr.dateRappel && dr.dateRappel <= today);
+    }
+
     if (search) {
       const q = search.toLowerCase();
-      d = d.filter(dr => dr.nom.toLowerCase().includes(q) || dr.tel.includes(q) || (dr.plaque || "").toLowerCase().includes(q));
+      d = d.filter(dr => dr.nom.toLowerCase().includes(q) || dr.tel.includes(q) || (dr.plaque || "").toLowerCase().includes(q) || (dr.permis || "").toLowerCase().includes(q));
     }
     if (zoneFilter !== "ALL") d = d.filter(dr => dr.zone === zoneFilter);
     if (responsableFilter !== "ALL") d = d.filter(dr => dr.responsable === responsableFilter);
@@ -318,7 +305,7 @@ export default function App() {
       if (sortBy === "calls") return b._callCount - a._callCount;
       return a.nom.localeCompare(b.nom);
     });
-  }, [fleetDrivers, search, zoneFilter, responsableFilter, showBloques, nonAppeles, inactifMin, inactifMax, sortBy]);
+  }, [fleetDrivers, search, zoneFilter, responsableFilter, showBloques, showQuitteParc, showRappels, nonAppeles, inactifMin, inactifMax, sortBy]);
 
   // Filter available fleets based on user access
   const availableFleets = useMemo(() => {
@@ -351,14 +338,14 @@ export default function App() {
     const sessionStart = Date.now();
     setAgentSessionStart(sessionStart);
 
-    // Persist session
-    window.storage.set("flotte_session_data", JSON.stringify({
+    // Persist session locally
+    localStorage.setItem("flotte_session_data", JSON.stringify({
       name: user.name,
       role: user.role,
       allowedFleets: allowed,
       customRole: user.customRole || "",
       sessionStart
-    })).catch(() => {});
+    }));
 
     setAgentSessions((prev: any) => ({
       ...prev,
@@ -373,7 +360,7 @@ export default function App() {
     setGlobalLogs(l => [{ time: new Date().toISOString(), agent: user.name, action: "LOGIN", details: `Connexion (${user.role})` }, ...l].slice(0, 500));
   };
 
-  const handleConfirm = useCallback(({ agent, comment, outcome }: any) => {
+  const handleConfirm = useCallback(({ agent, comment, outcome, dateRappel }: any) => {
     if (!modal) return;
     const { driverId } = modal;
     const driver = driversRef.current.find(d => d.id === driverId);
@@ -381,7 +368,7 @@ export default function App() {
 
     const now = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
     const newCount = driver._callCount + 1;
-    const entry = { agent, time: now, comment, outcome, via: "call" };
+    const entry = { agent, time: now, comment, outcome, via: "call", dateRappel };
 
     // Update agent stats
     setAgentSessions((prev: any) => ({
@@ -404,18 +391,26 @@ export default function App() {
     setCurrentAgent(agent);
     setTotalCalls(c => c + 1);
     
-    const updatedDriver = { ...driver, _called: true, _callCount: newCount, _callLog: [...driver._callLog, entry], commentaire: comment || driver.commentaire };
-    setDrivers(ds => ds.map(d => d.id === driverId ? updatedDriver : d));
-    
-    if (firebaseActive) {
-      setDoc(doc(db, "flotte_store", driverId), updatedDriver).catch(console.error);
-    }
+    const updatedDriver = { 
+      ...driver, 
+      _called: true, 
+      _callCount: newCount, 
+      _callLog: [...driver._callLog, entry], 
+      commentaire: comment || driver.commentaire,
+      aQuitteParc: outcome === "[QUITTE_PARC]" ? true : (outcome ? false : driver.aQuitteParc),
+      dateRappel: dateRappel !== undefined ? dateRappel : driver.dateRappel
+    };
+    setDrivers(ds => {
+      const newDrivers = ds.map(d => d.id === driverId ? updatedDriver : d);
+      window.storage.set("flotte_drivers", JSON.stringify(newDrivers)).catch(console.error);
+      return newDrivers;
+    });
 
     const ev = { id: Date.now() + Math.random(), driverNom: driver.nom, count: newCount, agent, time: now };
     setToasts(t => [...t, ev]);
     setTimeout(() => setToasts(t => t.filter(e => e.id !== ev.id)), 4000);
     setModal(null);
-  }, [modal, firebaseActive]);
+  }, [modal]);
 
   const handleWaClick = useCallback((driverId: string) => {
     setWaModal({ driverId });
@@ -425,11 +420,12 @@ export default function App() {
     const driver = driversRef.current.find(d => d.id === id);
     if (!driver) return;
     const updatedDriver = { ...driver, commentaire: comment };
-    setDrivers(ds => ds.map(d => d.id === id ? updatedDriver : d));
-    if (firebaseActive) {
-      setDoc(doc(db, "flotte_store", id), updatedDriver).catch(console.error);
-    }
-  }, [firebaseActive]);
+    setDrivers(ds => {
+      const newDrivers = ds.map(d => d.id === id ? updatedDriver : d);
+      window.storage.set("flotte_drivers", JSON.stringify(newDrivers)).catch(console.error);
+      return newDrivers;
+    });
+  }, []);
 
   const handleFileUpload = (e: any) => {
     if (currentFleetId === "ALL") {
@@ -550,6 +546,7 @@ export default function App() {
           commentaire: row["Commentaire"] || "",
           vehicule: row["Véhicule"] || "",
           plaque: row["Numéro de la plaque d'immatriculation du véhicule"] || "",
+          permis: row["Numéro de permis de conduire"] || row["Permis de conduire"] || row["Permis"] || "",
           note: row["Note"] || "",
           date_ajout: row["Date d'ajout"] || "",
           fin_bloque: limite < 0 && solde <= limite,
@@ -641,17 +638,7 @@ export default function App() {
           await window.storage.set("flotte_reactivated", JSON.stringify(updatedReactivations));
           await window.storage.set("flotte_dl_snapshot", JSON.stringify(newSnapshot));
           
-          if (firebaseActive) {
-            setToasts(prev => [...prev, { id: Date.now(), message: "Synchronisation Cloud automatique en cours... (Cela peut prendre quelques minutes)", type: "info" }]);
-            const chunkSize = 400;
-            for (let i = 0; i < finalDrivers.length; i += chunkSize) {
-              const chunk = finalDrivers.slice(i, i + chunkSize);
-              const batch = writeBatch(db);
-              chunk.forEach(d => batch.set(doc(db, "flotte_store", d.id), d));
-              await batch.commit();
-            }
-            setToasts(prev => [...prev, { id: Date.now(), message: "Données synchronisées avec succès !", type: "success" }]);
-          }
+          // Firebase sync removed
         } catch (e) {
           console.error("Failed to save after import", e);
           setToasts(prev => [...prev, { id: Date.now(), message: "Erreur de sauvegarde automatique !", type: "error" }]);
@@ -662,41 +649,7 @@ export default function App() {
   };
 
   const handleSyncToCloud = async () => {
-    if (!firebaseActive) {
-      alert("Firebase n'est pas configuré ou inaccessible.");
-      return;
-    }
-    if (!confirm("Voulez-vous envoyer toutes vos données locales vers le Cloud ? Cela écrasera les données distantes.")) return;
-    
-    try {
-      setToasts(prev => [...prev, { id: Date.now(), message: "Synchronisation Cloud en cours... (Cela peut prendre quelques minutes)", type: "info" }]);
-      
-      // Sync drivers in batches of 400
-      const chunkSize = 400;
-      for (let i = 0; i < drivers.length; i += chunkSize) {
-        const chunk = drivers.slice(i, i + chunkSize);
-        const batch = writeBatch(db);
-        chunk.forEach(d => {
-          batch.set(doc(db, "flotte_store", d.id), d);
-        });
-        await batch.commit();
-      }
-
-      // Sync users
-      const userBatch = writeBatch(db);
-      for (const u of users) {
-        // Use name as ID for users if no ID
-        const userId = u.id || u.name.replace(/\s/g, "_");
-        userBatch.set(doc(db, "users", userId), u);
-      }
-      await userBatch.commit();
-      
-      setStorageMode("cloud");
-      setToasts(prev => [...prev, { id: Date.now(), message: "Données synchronisées avec succès !", type: "success" }]);
-    } catch (e) {
-      console.error("Sync error", e);
-      alert("Erreur lors de la synchronisation.");
-    }
+    alert("La synchronisation Cloud a été désactivée (mode 100% local).");
   };
 
   const modalDriver = modal ? driversRef.current.find(d => d.id === modal.driverId) : null;
@@ -711,10 +664,11 @@ export default function App() {
     const driver = driversRef.current.find(d => d.id === ticket.driverId);
     if (!driver) return;
     const updatedDriver = { ...driver, tickets: [...(driver.tickets || []), ticket] };
-    setDrivers(ds => ds.map(d => d.id === ticket.driverId ? updatedDriver : d));
-    if (firebaseActive) {
-      setDoc(doc(db, "flotte_store", ticket.driverId), updatedDriver).catch(console.error);
-    }
+    setDrivers(ds => {
+      const newDrivers = ds.map(d => d.id === ticket.driverId ? updatedDriver : d);
+      window.storage.set("flotte_drivers", JSON.stringify(newDrivers)).catch(console.error);
+      return newDrivers;
+    });
   };
 
   return (
@@ -814,9 +768,9 @@ export default function App() {
               </div>
             </div>
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              {storageMode === "local" && (
+              {storageMode === "browser" && (
                 <div style={{ background: "#fef2f2", color: "#b91c1c", padding: "8px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700, border: "1px solid #fca5a5", display: "flex", alignItems: "center", gap: 6 }}>
-                  <span>⚠️ Mode Local (Non synchronisé)</span>
+                  <span>⚠️ Mode Navigateur (Non synchronisé)</span>
                 </div>
               )}
               {currentAgent && (
@@ -832,7 +786,7 @@ export default function App() {
                       setUserRole(null);
                       setCurrentUserFleets([]);
                       setAgentSessionStart(null);
-                      window.storage.delete("flotte_session_data").catch(() => {});
+                      localStorage.removeItem("flotte_session_data");
                     }} 
                     style={{ marginLeft: 4, background: "none", border: "none", color: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 14, padding: 4 }}
                     title="Se déconnecter"
@@ -857,7 +811,7 @@ export default function App() {
                 </div>
                 {totalCalls > 0 && <span style={{ position: "absolute", top: -5, right: -5, width: 18, height: 18, borderRadius: "50%", background: "#22c55e", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 3px rgba(34,197,94,0.3)", animation: "pop 0.3s ease-out" }}>{stats.appeles}</span>}
               </div>
-              {(userRole === "ADMIN" || currentUserFleets.length > 0) && (
+              {(userRole === "SUPER_ADMIN" || userRole === "ADMIN_PARC") && (
                 <label style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", background: "rgba(255,255,255,0.12)", borderRadius: 10, cursor: "pointer", fontSize: 13, fontWeight: 600, border: "1px solid rgba(255,255,255,0.28)" }}>
                   📂 Importer CSV
                   <input type="file" accept=".csv" onChange={handleFileUpload} style={{ display: "none" }} />
@@ -874,7 +828,7 @@ export default function App() {
                   setCurrentAgent("");
                   setCurrentUserFleets([]);
                   setAgentSessionStart(null);
-                  window.storage.delete("flotte_session_data").catch(() => {});
+                  localStorage.removeItem("flotte_session_data");
                 }}
                 style={{ 
                   display: "flex", 
@@ -1166,7 +1120,7 @@ export default function App() {
             <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
               {/* Row 1: search + zone + agent */}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-                <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="🔍 Nom, téléphone, plaque..." style={{ flex: 1, minWidth: 200, padding: "9px 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14 }} />
+                <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="🔍 Nom, téléphone, plaque, permis..." style={{ flex: 1, minWidth: 200, padding: "9px 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14 }} />
                 <select value={zoneFilter} onChange={e => { setZoneFilter(e.target.value); setPage(1); }} style={{ padding: "9px 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14 }}>
                   <option value="ALL">🌍 Toutes les zones</option>
                   {Object.entries(ZONE_CONFIG).map(([z, c]) => <option key={z} value={z}>{c.icon} {c.label}</option>)}
@@ -1228,6 +1182,14 @@ export default function App() {
                 <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", padding: "7px 12px", background: nonAppeles ? "#fff7ed" : "#f9fafb", borderRadius: 8, border: `1px solid ${nonAppeles ? "#fed7aa" : "#d1d5db"}` }}>
                   <input type="checkbox" checked={nonAppeles} onChange={e => { setNonAppeles(e.target.checked); setPage(1); }} />
                   📞 Non contactés uniquement
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", padding: "7px 12px", background: showQuitteParc ? "#f3f4f6" : "#f9fafb", borderRadius: 8, border: `1px solid ${showQuitteParc ? "#9ca3af" : "#d1d5db"}` }}>
+                  <input type="checkbox" checked={showQuitteParc} onChange={e => { setShowQuitteParc(e.target.checked); setPage(1); }} />
+                  🚪 A quitté le parc
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", padding: "7px 12px", background: showRappels ? "#f0fdf4" : "#f9fafb", borderRadius: 8, border: `1px solid ${showRappels ? "#86efac" : "#d1d5db"}` }}>
+                  <input type="checkbox" checked={showRappels} onChange={e => { setShowRappels(e.target.checked); setPage(1); }} />
+                  📅 Rappels du jour / en retard
                 </label>
                 <div style={{ marginLeft: "auto", fontSize: 13, color: "#6b7280" }}>
                   <strong style={{ color: "#111827", fontSize: 15 }}>{filtered.length}</strong> chauffeurs · Page {page}/{Math.max(1, totalPages)}
@@ -1761,13 +1723,13 @@ Cellule de Relance Yango`}
           <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 960 }}>
             {/* Storage badge */}
             <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 18px", background: storageReady ? "#f0fdf4" : "#fff7ed", border: `1px solid ${storageReady ? "#86efac" : "#fed7aa"}`, borderRadius: 12 }}>
-              <span style={{ fontSize: 24 }}>{firebaseActive ? "🔥" : storageReady ? "💾" : "⏳"}</span>
+              <span style={{ fontSize: 24 }}>{storageReady ? "💾" : "⏳"}</span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, color: firebaseActive ? "#ea580c" : storageReady ? "#15803d" : "#92400e" }}>
-                  {firebaseActive ? "Connecté à Firebase Cloud" : storageReady ? "Sauvegarde automatique active — données persistantes" : "Chargement de la mémoire..."}
+                <div style={{ fontWeight: 700, fontSize: 14, color: storageReady ? "#15803d" : "#92400e" }}>
+                  {storageReady ? "Sauvegarde locale active — données persistantes" : "Chargement de la mémoire..."}
                 </div>
                 <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
-                  {firebaseActive ? "Vos données sont synchronisées en temps réel sur le cloud Google Firebase." : "Appels, commentaires et historiques sauvegardés automatiquement. Disponibles à la prochaine ouverture."}
+                  {"Appels, commentaires et historiques sauvegardés automatiquement en local. Disponibles à la prochaine ouverture."}
                 </div>
               </div>
               <button onClick={async () => {

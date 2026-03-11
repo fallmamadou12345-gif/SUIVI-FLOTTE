@@ -75,7 +75,10 @@ const DriverRow: React.FC<DriverRowProps> = ({ driver, onComment, onCallClick, o
           </div>
         </td>
         <td style={{ padding: "10px 12px" }}>
-          <div style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>{driver.nom}</div>
+          <div style={{ fontWeight: 700, fontSize: 14, color: driver.aQuitteParc ? "#9ca3af" : "#111827", display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ textDecoration: driver.aQuitteParc ? "line-through" : "none" }}>{driver.nom}</span>
+            {driver.aQuitteParc && <span style={{ fontSize: 10, background: "#f3f4f6", color: "#4b5563", padding: "2px 6px", borderRadius: 4, fontWeight: 800 }}>QUITTÉ</span>}
+          </div>
           <div style={{ fontSize: 12, color: "#6b7280" }}>{driver.tel}</div>
         </td>
         <td style={{ padding: "10px 12px" }}>
@@ -94,6 +97,11 @@ const DriverRow: React.FC<DriverRowProps> = ({ driver, onComment, onCallClick, o
             fontStyle: driver.commentaire?.startsWith("[") ? "normal" : "italic"
           }}
         >
+          {driver.dateRappel && (
+            <span style={{ display: "inline-block", marginRight: 6, background: "#f0fdf4", color: "#166534", border: "1px solid #bbf7d0", padding: "2px 6px", borderRadius: 4, fontSize: 10, fontWeight: 800 }}>
+              📅 {new Date(driver.dateRappel).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })}
+            </span>
+          )}
           {driver.commentaire || <span style={{ color: "#d1d5db" }}>—</span>}
         </td>
         <td style={{ padding: "10px 12px", fontSize: 12, color: "#6b7280" }}>{driver.responsable || "—"}</td>
